@@ -171,75 +171,6 @@ int get_target_leaf(int leafCount) {
 	return tar;
 }
 
-void install_applications_incast (int incastLeaf, NodeContainer* servers, double requestRate, uint32_t requestSize, struct cdf_table *cdfTable,
-                                  long &flowCount, int SERVER_COUNT, int LEAF_COUNT, double START_TIME, double END_TIME, double FLOW_LAUNCH_END_TIME, int numPrior)
-{
-	int fan = SERVER_COUNT;
-	uint64_t flowSize = double(requestSize) / double(fan);
-
-	uint32_t prior = rand_range(1, numPrior - 1);
-
-	for (int incastServer = 0; incastServer < SERVER_COUNT; incastServer++)
-	{
-		double startTime = START_TIME + poission_gen_interval (requestRate);
-		while (startTime < FLOW_LAUNCH_END_TIME && startTime > START_TIME)
-		{
-			// Permutation demand matrix
-			int txLeaf = incastLeaf + 1;
-			if (txLeaf == LEAF_COUNT) {
-				txLeaf = 0;
-			}
-			// int txLeaf=incastLeaf;
-			// while (txLeaf==incastLeaf){
-			//     txLeaf = get_target_leaf(LEAF_COUNT);
-			// }
-
-			for (uint32_t txServer = 0; txServer < fan; txServer++) {
-
-				uint16_t port = PORT_START[ incastLeaf * SERVER_COUNT + incastServer]++;
-				if (port > PORT_END) {
-					port = 4444;
-					PORT_START[incastLeaf * SERVER_COUNT + incastServer] = 4444;
-				}
-				Time startApp = (NanoSeconds (150) + MilliSeconds(rand_range(50, 1000)));
-				Ptr<Node> rxNode = servers[incastLeaf].Get (incastServer);
-				Ptr<Ipv4> ipv4 = rxNode->GetObject<Ipv4> ();
-				Ipv4InterfaceAddress rxInterface = ipv4->GetAddress (1, 0);
-				Ipv4Address rxAddress = rxInterface.GetLocal ();
-
-				InetSocketAddress ad (rxAddress, port);
-				Address sinkAddress(ad);
-				Ptr<BulkSendApplication> bulksend = CreateObject<BulkSendApplication>();
-				bulksend->SetAttribute("Protocol", TypeIdValue(TcpSocketFactory::GetTypeId()));
-				bulksend->SetAttribute ("SendSize", UintegerValue (flowSize));
-				bulksend->SetAttribute ("MaxBytes", UintegerValue(flowSize));
-				bulksend->SetAttribute("FlowId", UintegerValue(flowCount++));
-				bulksend->SetAttribute("priorityCustom", UintegerValue(prior));
-				bulksend->SetAttribute("Remote", AddressValue(sinkAddress));
-				bulksend->SetAttribute("InitialCwnd", UintegerValue (flowSize / PACKET_SIZE + 1));
-				bulksend->SetAttribute("priority", UintegerValue(prior));
-				bulksend->SetAttribute("sendAt", TimeValue(Seconds (startTime)));
-				bulksend->SetStartTime (startApp);
-				bulksend->SetStopTime (Seconds (END_TIME));
-				servers[txLeaf].Get (txServer)->AddApplication(bulksend);
-
-				PacketSinkHelper sink ("ns3::TcpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), port));
-				ApplicationContainer sinkApp = sink.Install (servers[incastLeaf].Get(incastServer));
-				sinkApp.Get(0)->SetAttribute("TotalQueryBytes", UintegerValue(flowSize));
-				sinkApp.Get(0)->SetAttribute("recvAt", TimeValue(Seconds(startTime)));
-				sinkApp.Get(0)->SetAttribute("priority", UintegerValue(0)); // ack packets are prioritized
-				sinkApp.Get(0)->SetAttribute("priorityCustom", UintegerValue(0)); // ack packets are prioritized
-				sinkApp.Get(0)->SetAttribute("senderPriority", UintegerValue(prior));
-				sinkApp.Get(0)->SetAttribute("flowId", UintegerValue(flowCount));
-				flowCount += 1;
-				sinkApp.Start (startApp);
-				sinkApp.Stop (Seconds (END_TIME));
-				sinkApp.Get(0)->TraceConnectWithoutContext("FlowFinish", MakeBoundCallback(&TraceMsgFinish, fctOutput));
-			}
-			startTime += poission_gen_interval (requestRate);
-		}
-	}
-}
 
 void install_applications (int txLeaf, NodeContainer* servers, double requestRate, struct cdf_table *cdfTable,
                            long &flowCount, int SERVER_COUNT, int LEAF_COUNT, double START_TIME, double END_TIME, double FLOW_LAUNCH_END_TIME, int numPrior)
@@ -271,6 +202,7 @@ void install_applications (int txLeaf, NodeContainer* servers, double requestRat
 				PORT_START[rxLeaf * SERVER_COUNT + rxServer] = 4444;
 			}
 
+			// HM_Comment: Flow size information goes here
 			uint64_t flowSize = gen_random_cdf (cdfTable);
 			while (flowSize == 0) {
 				flowSize = gen_random_cdf (cdfTable);
@@ -307,6 +239,8 @@ void install_applications (int txLeaf, NodeContainer* servers, double requestRat
 			sinkApp.Start (Seconds(startTime));
 			sinkApp.Stop (Seconds (END_TIME));
 			sinkApp.Get(0)->TraceConnectWithoutContext("FlowFinish", MakeBoundCallback(&TraceMsgFinish, fctOutput));
+
+			// HM_Comment: Flow arrival information goes here.
 			startTime += poission_gen_interval (requestRate);
 		}
 	}
@@ -364,24 +298,21 @@ main (int argc, char *argv[])
 	uint32_t RedMaxTh = 65;
 	uint32_t UseEcn = 0;
 	std::string ecnEnabled = "EcnDisabled";
-	cmd.AddValue("RedMinTh", "Min Threshold for RED in packets", RedMinTh);
-	cmd.AddValue("RedMaxTh", "Max Threshold for RED in packets", RedMaxTh);
-	cmd.AddValue("UseEcn", "Ecn Enabled", UseEcn);
-
 	std::string sched = "roundRobin";
-	cmd.AddValue ("sched", "scheduling", sched);
-
 	uint32_t requestSize = 0.2 * BufferSize;
 	double queryRequestRate = 0; // at each server (per second)
-	cmd.AddValue ("request", "Query Size in Bytes", requestSize);
-	cmd.AddValue("queryRequestRate", "Query request rate (poisson arrivals)", queryRequestRate);
-
 	uint32_t nPrior = 2; // number queues in switch ports
-	cmd.AddValue ("nPrior", "number of priorities", nPrior);
-
 	std::string alphasFile = "/home/vamsi/src/phd/ns3-datacenter/simulator/ns-3.35/examples/ABM/alphas"; // On lakewood
 	std::string cdfFileName = "/home/vamsi/src/phd/ns3-datacenter/simulator/ns-3.35/examples/ABM/websearch.txt";
 	std::string cdfName = "WS";
+
+	cmd.AddValue("RedMinTh", "Min Threshold for RED in packets", RedMinTh);
+	cmd.AddValue("RedMaxTh", "Max Threshold for RED in packets", RedMaxTh);
+	cmd.AddValue("UseEcn", "Ecn Enabled", UseEcn);
+	cmd.AddValue ("sched", "scheduling", sched);
+	cmd.AddValue ("request", "Query Size in Bytes", requestSize);
+	cmd.AddValue("queryRequestRate", "Query request rate (poisson arrivals)", queryRequestRate);
+	cmd.AddValue ("nPrior", "number of priorities", nPrior);
 	cmd.AddValue ("alphasFile", "alpha values file (should be exactly nPrior lines)", alphasFile);
 	cmd.AddValue ("cdfFileName", "File name for flow distribution", cdfFileName);
 	cmd.AddValue ("cdfName", "Name for flow distribution", cdfName);
