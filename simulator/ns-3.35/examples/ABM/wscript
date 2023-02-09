@@ -10,3 +10,6 @@ def build(bld):
     obj = bld.create_ns3_program('abm-evaluation-nprio',
                                  ['point-to-point', 'traffic-control', 'internet', 'applications'])
     obj.source = ['abm-evaluation-nprio.cc', 'cdf.c']
+    obj = bld.create_ns3_program('janus-das',
+                                 ['point-to-point', 'traffic-control', 'internet', 'applications'])
+    obj.source = ['janus-das.cc', 'cdf.c']
