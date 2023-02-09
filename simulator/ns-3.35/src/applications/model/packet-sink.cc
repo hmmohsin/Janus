@@ -286,10 +286,10 @@ void PacketSink::HandleRead (Ptr<Socket> socket)
         if(m_totalRx >= TotalQueryBytes){
           double totalSize = m_totalRx + ((m_totalRx-1)/(1400.0)+1)*(64); // TODO: Add header sizes more precisely.
           if (m_recvAt.GetSeconds()!=0){
-            m_flowFinishTrace(totalSize, m_recvAt.GetNanoSeconds(),true,sender_priority);
+            m_flowFinishTrace(flowId, totalSize, m_recvAt.GetNanoSeconds(),true,sender_priority);
           }
           else{
-            m_flowFinishTrace(totalSize, m_startTime.GetNanoSeconds(),false,sender_priority);
+            m_flowFinishTrace(flowId, totalSize, m_startTime.GetNanoSeconds(),false,sender_priority);
             // std::cout << "Flow finished. FCT = " << Simulator::Now().GetSeconds()-m_startTime.GetSeconds() << " seconds" << std::endl;
           }
           StopApplication();

@@ -199,7 +199,7 @@ private:
   TracedCallback<Ptr<const Packet>, const Address &, const Address &, const SeqTsSizeHeader&> m_rxTraceWithSeqTsSize;
 
   /* Modification */
-  TracedCallback<double, double,bool,uint32_t> m_flowFinishTrace;
+  TracedCallback<uint32_t, double, double,bool,uint32_t> m_flowFinishTrace;
   /* Modification */
 };
 

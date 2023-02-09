@@ -35,9 +35,9 @@ RED_MAX=65
 N_PRIO=2
 
 ALPHAFILE="$DIR/alphas"
-CDFFILE="$NS3/workloads/das.txt"
+CDFFILE="$NS3/workload/das.txt"
 CDFNAME="DAS"
-
+echo $CDFFILE
 ALPHA_UPDATE_INT=1 # 1 RTT
 
 
@@ -81,20 +81,23 @@ DCTCPLOAD=0.0
 POWERLOAD=0.0
 TCP=$CUBIC #this wont be used anyway
 ALG=$DT
-for CUBICLOAD in 0.2 0.4 0.6;do
-    FLOW_END_TIME=13 #$(python3 -c "print(10+3*0.8/$LOAD)")
-    FLOWFILE="$DUMP_DIR/fcts-multi-$TCP-$ALG-$CUBICLOAD-$BURST_SIZES-$BURST_FREQ.fct"
-    TORFILE="$DUMP_DIR/tor-multi-$TCP-$ALG-$CUBICLOAD-$BURST_SIZES-$BURST_FREQ.stat"
+for LOAD in 0.2;do
+    FLOW_END_TIME=12 #$(python3 -c "print(10+3*0.8/$LOAD)")
+    FLOWFILE="$DUMP_DIR/fcts-multi-$TCP-$ALG-$LOAD-$BURST_SIZES-$BURST_FREQ.fct"
+    TORFILE="$DUMP_DIR/tor-multi-$TCP-$ALG-$LOAD-$BURST_SIZES-$BURST_FREQ.stat"
+    N=$(( $N+1 ))
+    #(time ./waf --run janus-das --gdb)
+    #(time ./waf --run janus-das --gdb)&
+
+    (time ./waf --run "janus-das --load=$LOAD  --StartTime=$START_TIME --EndTime=$END_TIME --FlowLaunchEndTime=$FLOW_END_TIME --serverCount=$SERVERS --spineCount=$SPINES --leafCount=$LEAVES --linkCount=$LINKS --spineLeafCapacity=$LEAF_SPINE_CAP --leafServerCapacity=$SERVER_LEAF_CAP --linkLatency=$LATENCY --TcpProt=$TCP --BufferSize=$BUFFER --statBuf=$STATIC_BUFFER --algorithm=$ALG --RedMinTh=$RED_MIN --RedMaxTh=$RED_MAX --request=$BURST_SIZE --queryRequestRate=$BURST_FREQ --nPrior=$N_PRIO --alphasFile=$ALPHAFILE --cdfFileName=$CDFFILE --alphaUpdateInterval=$ALPHA_UPDATE_INT --fctOutFile=$FLOWFILE --torOutFile=$TORFILE"; echo "$FLOWFILE" --gdb)&
     while [[ $(( $(ps aux | grep janus-das-optimized | wc -l)+$(ps aux | grep janus-das-optimized | wc -l) )) -gt $N_CORES ]];do
         sleep 30;
         echo "waiting for cores, $N running..."
     done
-    N=$(( $N+1 ))
-    (time ./waf --run "janus-das --loadCubic=$CUBICLOAD --loadDctcp=$DCTCPLOAD --loadPower=$POWERLOAD --StartTime=$START_TIME --EndTime=$END_TIME --FlowLaunchEndTime=$FLOW_END_TIME --serverCount=$SERVERS --spineCount=$SPINES --leafCount=$LEAVES --linkCount=$LINKS --spineLeafCapacity=$LEAF_SPINE_CAP --leafServerCapacity=$SERVER_LEAF_CAP --linkLatency=$LATENCY --BufferSize=$BUFFER --statBuf=$STATIC_BUFFER --algorithm=$ALG --RedMinTh=$RED_MIN --RedMaxTh=$RED_MAX --request=$BURST_SIZE --queryRequestRate=$BURST_FREQ --nPrior=$N_PRIO --alphasFile=$ALPHAFILE --cdfFileName=$CDFFILE --alphaUpdateInterval=$ALPHA_UPDATE_INT --fctOutFile=$FLOWFILE --torOutFile=$TORFILE"; echo "$FLOWFILE")&
-    sleep 10
+    sleep 100
 done
 
-while [[ $(ps aux|grep "abm-evaluation-optimized"|wc -l) -gt 1 ]];do
+while [[ $(ps aux|grep "janus-das-optimized"|wc -l) -gt 1 ]];do
 	echo "Waiting for simulations to finish..."
 	sleep 5
 done

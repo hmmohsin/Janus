@@ -1,8 +1,3 @@
-/*
- Vamsi
- Created: 23 Jan 22:26
-*/
-
 #include <stdlib.h>
 #include <iostream>
 #include <fstream>
@@ -91,7 +86,7 @@ T rand_range (T min, T max)
 
 double baseRTTNano;
 double nicBw;
-void TraceMsgFinish (Ptr<OutputStreamWrapper> stream, double size, double start, bool incast, uint32_t prior )
+void TraceMsgFinish (Ptr<OutputStreamWrapper> stream, uint32_t flowId, double size, double start, bool incast, uint32_t prior )
 {
 	double fct, standalone_fct, slowdown;
 	fct = Simulator::Now().GetNanoSeconds() - start;
@@ -100,6 +95,7 @@ void TraceMsgFinish (Ptr<OutputStreamWrapper> stream, double size, double start,
 
 	*stream->GetStream ()
 	        << Simulator::Now().GetSeconds()
+		<< " " << flowId
 	        << " " << size
 	        << " " << fct
 	        << " " << standalone_fct
@@ -191,21 +187,19 @@ void setup_flow (Ptr<Node> txNode, Ptr<Node> rxNode, int port, int flowId, int f
 	bulksend->SetAttribute("priority", UintegerValue(prio));
 
 	bulksend->SetStartTime (Seconds(startTime));
-	bulksend->SetStopTime (Seconds (endTime));
-	
+	bulksend->SetStopTime (Seconds (endTime));	
 	txNode->AddApplication(bulksend);
 
 	PacketSinkHelper sink ("ns3::TcpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), port));
 	ApplicationContainer sinkApp = sink.Install (rxNode);
 	sinkApp.Get(0)->SetAttribute("TotalQueryBytes", UintegerValue(flowSize));
-	sinkApp.Get(0)->SetAttribute("priority", UintegerValue(0)); // ack packets are prioritized
-	sinkApp.Get(0)->SetAttribute("priorityCustom", UintegerValue(0)); // ack packets are prioritized
+	sinkApp.Get(0)->SetAttribute("priority", UintegerValue(prio)); // ack packets are prioritized
+	sinkApp.Get(0)->SetAttribute("priorityCustom", UintegerValue(prio)); // ack packets are prioritized
 	sinkApp.Get(0)->SetAttribute("flowId", UintegerValue(flowId));
-	sinkApp.Get(0)->SetAttribute("senderPriority", UintegerValue(0));
+	sinkApp.Get(0)->SetAttribute("senderPriority", UintegerValue(prio));
 	sinkApp.Start (Seconds(startTime));
 	sinkApp.Stop (Seconds (endTime));
 	sinkApp.Get(0)->TraceConnectWithoutContext("FlowFinish", MakeBoundCallback(&TraceMsgFinish, fctOutput));
-
 }
 
 void install_das_applications (int txLeaf, std::vector<int>& txServers, int rxLeaf, std::vector<int>& rxServers, NodeContainer* servers, int SERVER_COUNT, double requestRate, struct cdf_table *cdfTable,
@@ -222,6 +216,13 @@ void install_das_applications (int txLeaf, std::vector<int>& txServers, int rxLe
 		uint32_t priTxServerId = txServers[std::rand() % txServers.size()];
 		uint32_t secTxServerId = txServers[std::rand() % txServers.size()];		
 		uint32_t rxServerId = rxServers[std::rand() % rxServers.size()];
+
+		std::cout<<"HM_Debug: FlowId: "<<flowId
+			<<", TxLeaf: "<<txLeaf
+			<<", rxLeaf: "<<rxLeaf
+			<<", PriTxServerId: "<<priTxServerId
+			<<", SecTxServerId: "<<secTxServerId
+			<<", RxServerId: "<<rxServerId<<std::endl;
 
 		Ptr<Node> priTxNode = servers[txLeaf].Get(priTxServerId);
 		Ptr<Node> secTxNode = servers[txLeaf].Get(secTxServerId);		
@@ -249,7 +250,7 @@ void install_das_applications (int txLeaf, std::vector<int>& txServers, int rxLe
 		std::cout<<"FlowSize: "<<flowSize<<", StartTime: "<<startTime<<std::endl;
 
 		setup_flow (priTxNode, rxNode, priPort, flowId++, flowSize, priPrio, startTime, END_TIME);
-		setup_flow (priTxNode, rxNode, secPort, flowId++, flowSize, secPrio, startTime, END_TIME);		
+		setup_flow (secTxNode, rxNode, secPort, flowId++, flowSize, secPrio, startTime, END_TIME);		
 
 	}
 	// std::cout << "Finished installation of applications from leaf-"<< fromLeafId << std::endl;
@@ -271,7 +272,7 @@ main (int argc, char *argv[])
 	unsigned randomSeed = 8;
 	cmd.AddValue ("randomSeed", "Random seed, 0 for random generated", randomSeed);
 
-	double load = 0.6;
+	double load = 0.2;
 	cmd.AddValue ("load", "Load of the network, 0.0 - 1.0", load);
 
 	uint32_t SERVER_COUNT = 32;
@@ -309,8 +310,8 @@ main (int argc, char *argv[])
 	uint32_t requestSize = 0.2 * BufferSize;
 	double queryRequestRate = 0; // at each server (per second)
 	uint32_t nPrior = 2; // number queues in switch ports
-	std::string alphasFile = "/home/vamsi/src/phd/ns3-datacenter/simulator/ns-3.35/examples/ABM/alphas"; // On lakewood
-	std::string cdfFileName = "/home/vamsi/src/phd/ns3-datacenter/simulator/ns-3.35/examples/ABM/websearch.txt";
+	std::string alphasFile = "/mnt/extra/ns3-datacenter/simulator/ns-3.35/workload/das.txt"; // On lakewood
+	std::string cdfFileName = "/mnt/extra/ns3-datacenter/simulator/ns-3.35/workload/das.txt";
 	std::string cdfName = "WS";
 
 	cmd.AddValue("RedMinTh", "Min Threshold for RED in packets", RedMinTh);
@@ -421,7 +422,7 @@ main (int argc, char *argv[])
 
 	double RTTBytes = (LEAF_SERVER_CAPACITY * 1e-6) * linkLatency; // 8 links visited in roundtrip according to the topology, divided by 8 for bytes
 	uint32_t RTTPackets = RTTBytes / PACKET_SIZE + 1;
-	baseRTTNano = linkLatency * 8 * 1e3;
+	baseRTTNano = linkLatency * 4 * 1e3;
 	nicBw = leafServerCapacity;
 	// std::cout << "bandwidth " << spineLeafCapacity << "gbps" <<  " rtt " << linkLatency*8 << "us" << " BDP " << bdp/1e6 << std::endl;
 
@@ -836,9 +837,26 @@ main (int argc, char *argv[])
 	NS_LOG_INFO ("Initialize CDF table");
 	struct cdf_table* cdfTable = new cdf_table ();
 	init_cdf (cdfTable);
+	std::cout<<"HM_Debug: cdfFileName "<<cdfFileName<<std::endl;
 	load_cdf (cdfTable, cdfFileName.c_str ());
+
+	int srcLeaf = 0;
+	int dstLeaf = 0;
+
+	// HM_Comment: Setting tx servers and rx servers
+	std::vector<int> txServers(SERVER_COUNT-1);
+	std::vector<int> rxServers{SERVER_COUNT-1};	
+
+	for (int i =0; i < txServers.size()-1; i++) {
+		txServers[i] = i;
+	}
+
+	double QUERY_START_TIME = START_TIME;
+
+	long flowCount = 0;
+	double requestRate = load * LEAF_SERVER_CAPACITY * rxServers.size() / (8 * avg_cdf (cdfTable)) / rxServers.size();	
+
 	NS_LOG_INFO ("Calculating request rate");
-	double requestRate = load * LEAF_SERVER_CAPACITY * SERVER_COUNT / oversubRatio / (8 * avg_cdf (cdfTable)) / SERVER_COUNT;
 	NS_LOG_INFO ("Average request rate: " << requestRate << " per second");
 	NS_LOG_INFO ("Initialize random seed: " << randomSeed);
 
@@ -852,23 +870,10 @@ main (int argc, char *argv[])
 	{
 		srand (randomSeed);
 	}
-	double QUERY_START_TIME = START_TIME;
-
-	long flowCount = 0;
 
 	for (uint32_t i = 0; i < SERVER_COUNT * LEAF_COUNT; i++)
 		PORT_START[i] = 4444;
 	
-	// HM_Comment: Setting tx servers and rx servers
-	std::vector<int> txServers(SERVER_COUNT-1);
-	std::vector<int> rxServers{SERVER_COUNT};	
-
-	int srcLeaf = 0;
-	int dstLeaf = 0;
-
-	for (int i =0; i < txServers.size(); i++) {
-		txServers[i] = i;
-	}
 
 	// HM_Comment: Single rack, single link bottleneck
 	install_das_applications(srcLeaf, txServers, dstLeaf, rxServers, servers, SERVER_COUNT, requestRate, cdfTable, flowCount, START_TIME, END_TIME, FLOW_LAUNCH_END_TIME);
